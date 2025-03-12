@@ -1246,7 +1246,10 @@ static int64_t GetImportTimestamp(const UniValue& data, int64_t now)
         } else if (timestamp.isStr() && timestamp.get_str() == "now") {
             return now;
         }
-        throw JSONRPCError(RPC_TYPE_ERROR, strprintf("Expected number or \"now\" timestamp value for key. got type %s", uvTypeName(timestamp.type())));
+        else if (timestamp.isStr() && timestamp.get_str() == "never") {
+            return -1;
+        }
+        throw JSONRPCError(RPC_TYPE_ERROR, strprintf("Expected number or \"now\" or \"never\" timestamp value for key. got type %s", uvTypeName(timestamp.type())));
     }
     throw JSONRPCError(RPC_TYPE_ERROR, "Missing required timestamp field for key");
 }
@@ -1575,18 +1578,15 @@ static UniValue ProcessDescriptorImport(CWallet& wallet, const UniValue& data, c
 
             WalletDescriptor w_desc(std::move(parsed_desc), timestamp, range_start, range_end, next_index);
 
-            // Check if the wallet already contains the descriptor
-            auto existing_spk_manager = wallet.GetDescriptorScriptPubKeyMan(w_desc);
-            if (existing_spk_manager) {
-                if (!existing_spk_manager->CanUpdateToWalletDescriptor(w_desc, error)) {
-                    throw JSONRPCError(RPC_INVALID_PARAMETER, error);
+            ScriptPubKeyMan* spk_manager = nullptr;
+            try {
+                // Add descriptor to the wallet
+                spk_manager = wallet.AddWalletDescriptor(w_desc, keys, label, desc_internal);
+                if (spk_manager == nullptr) {
+                    throw JSONRPCError(RPC_WALLET_ERROR, strprintf("Could not add descriptor '%s'", descriptor));
                 }
-            }
-
-            // Add descriptor to the wallet
-            auto spk_manager = wallet.AddWalletDescriptor(w_desc, keys, label, desc_internal);
-            if (spk_manager == nullptr) {
-                throw JSONRPCError(RPC_WALLET_ERROR, strprintf("Could not add descriptor '%s'", descriptor));
+            } catch (const std::invalid_argument& ex) {
+                throw JSONRPCError(RPC_INVALID_PARAMETER, ex.what());
             }
 
             // Set descriptor as active if necessary
@@ -1631,10 +1631,11 @@ RPCHelpMan importdescriptors()
                                     {"next_index", RPCArg::Type::NUM, RPCArg::Optional::OMITTED, "If a ranged descriptor is set to active, this specifies the next index to generate addresses from"},
                                     {"timestamp", RPCArg::Type::NUM, RPCArg::Optional::NO, "Time from which to start rescanning the blockchain for this descriptor, in " + UNIX_EPOCH_TIME + "\n"
                                         "Use the string \"now\" to substitute the current synced blockchain time.\n"
-                                        "\"now\" can be specified to bypass scanning, for outputs which are known to never have been used, and\n"
+                                        "\"now\" can be specified to scanning from last mediantime, for outputs which are known to never have been used, and\n"
+                                        "\"never\" can be specified to skip scanning, and\n"
                                         "0 can be specified to scan the entire blockchain. Blocks up to 2 hours before the earliest timestamp\n"
                                         "of all descriptors being imported will be scanned as well as the mempool.",
-                                        RPCArgOptions{.type_str={"timestamp | \"now\"", "integer / string"}}
+                                        RPCArgOptions{.type_str={"timestamp | \"now\" | \"never\"", "integer / string"}}
                                     },
                                     {"internal", RPCArg::Type::BOOL, RPCArg::Default{false}, "Whether matching outputs should be treated as not incoming payments (e.g. change)"},
                                     {"label", RPCArg::Type::STR, RPCArg::Default{""}, "Label to assign to the address, only allowed with internal=false. Disabled for ranged descriptors"},
@@ -1693,7 +1694,7 @@ RPCHelpMan importdescriptors()
     const int64_t minimum_timestamp = 1;
     int64_t now = 0;
     int64_t lowest_timestamp = 0;
-    bool rescan = false;
+    bool rescan = true;
     UniValue response(UniValue::VARR);
     {
         LOCK(pwallet->cs_wallet);
@@ -1701,22 +1702,23 @@ RPCHelpMan importdescriptors()
 
         CHECK_NONFATAL(pwallet->chain().findBlock(pwallet->GetLastBlockHash(), FoundBlock().time(lowest_timestamp).mtpTime(now)));
 
+        int all_rescan_value = 0;
         // Get all timestamps and extract the lowest timestamp
         for (const UniValue& request : requests.getValues()) {
             // This throws an error if "timestamp" doesn't exist
-            const int64_t timestamp = std::max(GetImportTimestamp(request, now), minimum_timestamp);
+            auto requestTimestamp = GetImportTimestamp(request, now);
+            all_rescan_value += (requestTimestamp < 0 ? 0 : 1);
+            const int64_t timestamp = std::max(requestTimestamp, minimum_timestamp);
             const UniValue result = ProcessDescriptorImport(*pwallet, request, timestamp);
             response.push_back(result);
 
             if (lowest_timestamp > timestamp ) {
                 lowest_timestamp = timestamp;
             }
-
-            // If we know the chain tip, and at least one request was successful then allow rescan
-            if (!rescan && result["success"].get_bool()) {
-                rescan = true;
-            }
         }
+
+        rescan = all_rescan_value > 0 ? true:false;
+
         pwallet->ConnectScriptPubKeyManNotifiers();
     }
 
