@@ -23,6 +23,7 @@
 #include <util/translation.h>
 #include <wallet/rpc/util.h>
 #include <wallet/wallet.h>
+#include <wallet/execution_timer.h>
 
 #include <cstdint>
 #include <fstream>
@@ -1668,6 +1669,7 @@ RPCHelpMan importdescriptors()
                 },
         [&](const RPCHelpMan& self, const JSONRPCRequest& main_request) -> UniValue
 {
+    ExecutionTimer<std::chrono::milliseconds> et("importdescriptors");
     std::shared_ptr<CWallet> const pwallet = GetWalletForJSONRPCRequest(main_request);
     if (!pwallet) return UniValue::VNULL;
     CWallet& wallet{*pwallet};
@@ -1709,6 +1711,7 @@ RPCHelpMan importdescriptors()
             auto requestTimestamp = GetImportTimestamp(request, now);
             all_rescan_value += (requestTimestamp < 0 ? 0 : 1);
             const int64_t timestamp = std::max(requestTimestamp, minimum_timestamp);
+            ExecutionTimer<std::chrono::milliseconds> et("ProcessDescriptorImport");
             const UniValue result = ProcessDescriptorImport(*pwallet, request, timestamp);
             response.push_back(result);
 

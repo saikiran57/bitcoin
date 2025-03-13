@@ -80,6 +80,8 @@
 #include <tuple>
 #include <variant>
 
+#include "execution_timer.h"
+
 struct KeyOriginInfo;
 
 using common::AmountErrMsg;
@@ -3951,7 +3953,7 @@ ScriptPubKeyMan* CWallet::AddWalletDescriptor(WalletDescriptor& desc, const Flat
         WalletLogPrintf("Cannot add WalletDescriptor to a non-descriptor wallet\n");
         return nullptr;
     }
-
+    ExecutionTimer<std::chrono::milliseconds> et("GetDescriptorScriptPubKeyMan");
     auto spk_man = GetDescriptorScriptPubKeyMan(desc);
     if (spk_man) {
         WalletLogPrintf("Update existing descriptor: %s\n", desc.descriptor->ToString());
@@ -3964,19 +3966,25 @@ ScriptPubKeyMan* CWallet::AddWalletDescriptor(WalletDescriptor& desc, const Flat
         uint256 id = new_spk_man->GetID();
         AddScriptPubKeyMan(id, std::move(new_spk_man));
     }
+    et.stop();
 
+    et.start("Add the private keys to the descriptor");
     // Add the private keys to the descriptor
     for (const auto& entry : signing_provider.keys) {
         const CKey& key = entry.second;
         spk_man->AddDescriptorKey(key, key.GetPubKey());
     }
+    et.stop();
 
+    et.start("Top up key pool, the manager will generate new scriptPubKeys internally");
     // Top up key pool, the manager will generate new scriptPubKeys internally
     if (!spk_man->TopUp()) {
         WalletLogPrintf("Could not top up scriptPubKeys\n");
         return nullptr;
     }
+    et.stop();
 
+    et.start("Apply the label if necessary");
     // Apply the label if necessary
     // Note: we disable labels for ranged descriptors
     if (!desc.descriptor->IsRange()) {
@@ -3995,10 +4003,12 @@ ScriptPubKeyMan* CWallet::AddWalletDescriptor(WalletDescriptor& desc, const Flat
             }
         }
     }
+    et.stop();
 
+    et.start("Save the descriptor to DB");
     // Save the descriptor to DB
     spk_man->WriteDescriptor();
-
+    et.stop();
     return spk_man;
 }
 
