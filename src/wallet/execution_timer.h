@@ -13,24 +13,15 @@ template <class T = std::chrono::milliseconds>
 std::string TimeVariantType()
 {
     std::string type;
-    if constexpr (std::is_same_v<T, std::chrono::seconds>)
-    {
+    if constexpr (std::is_same_v<T, std::chrono::seconds>) {
         type = "seconds";
-    }
-    else if constexpr (std::is_same_v<T, std::chrono::milliseconds>)
-    {
+    } else if constexpr (std::is_same_v<T, std::chrono::milliseconds>) {
         type = "milliseconds";
-    }
-    else if constexpr (std::is_same_v<T, std::chrono::microseconds>)
-    {
+    } else if constexpr (std::is_same_v<T, std::chrono::microseconds>) {
         type = "microseconds";
-    }
-    else if constexpr (std::is_same_v<T, std::chrono::nanoseconds>)
-    {
+    } else if constexpr (std::is_same_v<T, std::chrono::nanoseconds>) {
         type = "nanoseconds";
-    }
-    else
-    {
+    } else {
         throw std::runtime_error("unknown type");
     }
 
@@ -48,31 +39,31 @@ private:
     Clock::time_point mStart = Clock::now();
     std::string m_message = "";
     std::atomic_bool m_isStopped = false;
+
 public:
-    constexpr ExecutionTimer() = default;
-    constexpr ExecutionTimer(const std::string& message) : m_message(message){}
+    ExecutionTimer() = default;
+    ExecutionTimer(const std::string& message) : m_message(message) {}
     ~ExecutionTimer()
     {
-        if (!m_isStopped)
-        {
+        if (!m_isStopped) {
             stop();
         }
     }
 
-    constexpr void start(const std::string& message)
+    void start(const std::string& message)
     {
         m_message = message;
         m_isStopped = false;
         mStart = Clock::now();
     }
 
-    constexpr void stop()
+    void stop()
     {
         const auto end = Clock::now();
         std::ostringstream strStream;
         strStream << "Time Elapsed for " << m_message << ":" << std::chrono::duration_cast<Resolution>(end - mStart).count() << " "
-                  << TimeVariantType<Resolution>() << std::endl;
+                  << TimeVariantType<Resolution>();
         std::cout << strStream.str() << std::endl;
         m_isStopped = true;
     }
-};  // ExecutionTimer
+}; // ExecutionTimer
