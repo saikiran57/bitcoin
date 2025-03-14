@@ -5,6 +5,7 @@
 #include <sstream>
 #include <string>
 #include <variant>
+#include <logging.h>
 
 using TimeVariant =
     std::variant<std::chrono::seconds, std::chrono::milliseconds, std::chrono::microseconds, std::chrono::nanoseconds>;
@@ -63,7 +64,7 @@ public:
         std::ostringstream strStream;
         strStream << "Time Elapsed for " << m_message << ":" << std::chrono::duration_cast<Resolution>(end - mStart).count() << " "
                   << TimeVariantType<Resolution>();
-        std::cout << strStream.str() << std::endl;
+        LogInfo("[Perf] %s", strStream.str() );
         m_isStopped = true;
     }
 }; // ExecutionTimer
